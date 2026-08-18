@@ -51,8 +51,8 @@ export default function Sidebar({ userEmail }: { userEmail?: string | null }) {
       {/* デスクトップ:左固定サイドバー */}
       <aside className="hidden md:flex md:fixed md:inset-y-0 md:left-0 md:w-60 md:flex-col md:z-20 border-r border-black/[0.06] bg-white/60 backdrop-blur-xl">
         <div className="px-6 py-7">
-          <p className="text-sm font-bold text-gradient tracking-tight">カイタク</p>
-          <p className="text-[11px] text-zinc-500 mt-0.5">KAITAKU · Sales Automation</p>
+          <p className="text-sm font-bold text-gradient tracking-tight">KAITAKU</p>
+          <p className="text-[11px] text-zinc-500 mt-0.5">Sales Automation</p>
         </div>
         <nav className="flex-1 px-3 space-y-1 overflow-y-auto">
           {navItems.map((item) => (

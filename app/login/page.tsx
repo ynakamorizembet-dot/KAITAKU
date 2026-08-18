@@ -25,7 +25,7 @@ export default function LoginPage() {
     <main className="min-h-screen flex items-center justify-center px-6">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <p className="text-sm font-bold text-gradient tracking-tight">カイタク</p>
+          <p className="text-sm font-bold text-gradient tracking-tight">KAITAKU</p>
           <h1 className="text-xl font-bold text-zinc-900 mt-3">ログイン</h1>
           <p className="text-sm text-zinc-500 mt-2">
             パスワードは不要です。メールアドレス宛にログイン用リンクを送ります。
