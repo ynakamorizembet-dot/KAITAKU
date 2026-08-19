@@ -15,8 +15,12 @@ create table if not exists public.profiles (
   trial_ends_at timestamptz not null default (now() + interval '14 days'),
   contract_renews_at timestamptz,
   status text not null default 'trial' check (status in ('trial', 'active', 'expired', 'cancelled')),
+  is_admin boolean not null default false,
   created_at timestamptz not null default now()
 );
+
+-- 既存DBにも安全に追従できるよう(このテーブルが既にある環境向け)
+alter table public.profiles add column if not exists is_admin boolean not null default false;
 
 alter table public.profiles enable row level security;
 

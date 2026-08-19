@@ -43,7 +43,13 @@ function NavLink({
   );
 }
 
-export default function Sidebar({ userEmail }: { userEmail?: string | null }) {
+export default function Sidebar({
+  userEmail,
+  isAdmin = false,
+}: {
+  userEmail?: string | null;
+  isAdmin?: boolean;
+}) {
   const pathname = usePathname();
 
   return (
@@ -59,12 +65,17 @@ export default function Sidebar({ userEmail }: { userEmail?: string | null }) {
             <NavLink key={item.href} item={item} active={pathname === item.href} />
           ))}
 
-          <p className="px-3 pt-5 pb-1 text-[10px] font-semibold tracking-wide text-zinc-400 uppercase">
-            運営管理
-          </p>
-          {adminItems.map((item) => (
-            <NavLink key={item.href} item={item} active={pathname === item.href} />
-          ))}
+          {/* 運営管理メニューは管理者(is_admin=true)のみに表示。一般顧客には出さない・アクセスもさせない */}
+          {isAdmin && (
+            <>
+              <p className="px-3 pt-5 pb-1 text-[10px] font-semibold tracking-wide text-zinc-400 uppercase">
+                運営管理
+              </p>
+              {adminItems.map((item) => (
+                <NavLink key={item.href} item={item} active={pathname === item.href} />
+              ))}
+            </>
+          )}
         </nav>
         <div className="px-6 py-5">
           {userEmail && (
@@ -90,7 +101,7 @@ export default function Sidebar({ userEmail }: { userEmail?: string | null }) {
 
       {/* モバイル:上部タブ */}
       <nav className="md:hidden sticky top-0 z-20 flex overflow-x-auto gap-1 px-3 py-2.5 bg-white/80 backdrop-blur-xl border-b border-black/[0.06]">
-        {[...navItems, ...adminItems].map((item) => {
+        {[...navItems, ...(isAdmin ? adminItems : [])].map((item) => {
           const active = pathname === item.href;
           const Icon = item.icon;
           return (
