@@ -67,8 +67,11 @@ create trigger on_auth_user_created
 
 -- =========================================
 -- 紹介プログラム: 紹介された新規ユーザーが初回登録時に呼ぶ
--- 紹介者(referrer)の期間を7日延長する(トライアル中ならtrial_ends_at、契約中ならcontract_renews_at)。
--- 濫用防止のため、1紹介者あたりの延長は暫定で最大4回(28日)まで。上限は運用状況を見て見直す。
+-- 「法人単位」で計算する: 紹介者と同じ法人とみなせる全アカウントに一律+7日を付与する。
+--   同一法人の判定は「メールドメイン一致」を優先し、フリーメール(gmail.com等)の場合のみ
+--   自己申告のcompany_nameの完全一致にフォールバックする(この場合はなりすまし余地あり、既知の制約)。
+--   トライアル中の対象者はtrial_ends_at、契約中の対象者はcontract_renews_atをそれぞれ延長する。
+-- 濫用防止のため、1紹介者あたりのボーナス発動回数は暫定で最大4回まで。上限は運用状況を見て見直す。
 -- =========================================
 create or replace function public.apply_referral(p_referral_code text)
 returns boolean
@@ -78,15 +81,17 @@ as $$
 declare
   v_referrer_id uuid;
   v_new_user_id uuid := auth.uid();
-  v_status text;
+  v_referrer_domain text;
+  v_referrer_company text;
+  v_is_free_domain boolean;
   v_reward_count integer;
 begin
   if v_new_user_id is null then
     return false;
   end if;
 
-  select id, status, referral_reward_count
-    into v_referrer_id, v_status, v_reward_count
+  select id, split_part(email, '@', 2), company_name, referral_reward_count
+    into v_referrer_id, v_referrer_domain, v_referrer_company, v_reward_count
   from public.profiles
   where referral_code = p_referral_code
     and id <> v_new_user_id;
@@ -109,17 +114,23 @@ begin
     return true;
   end if;
 
-  if v_status = 'trial' then
-    update public.profiles
-    set trial_ends_at = trial_ends_at + interval '7 days',
-        referral_reward_count = referral_reward_count + 1
-    where id = v_referrer_id;
-  elsif v_status = 'active' then
-    update public.profiles
-    set contract_renews_at = coalesce(contract_renews_at, now()) + interval '7 days',
-        referral_reward_count = referral_reward_count + 1
-    where id = v_referrer_id;
-  end if;
+  v_is_free_domain := lower(v_referrer_domain) in (
+    'gmail.com', 'yahoo.co.jp', 'yahoo.com', 'outlook.com', 'hotmail.com',
+    'icloud.com', 'me.com', 'live.com', 'qq.com', 'naver.com'
+  );
+
+  -- 同一法人(ドメイン一致、フリーメールはcompany_name一致)の全アカウントに一律+7日
+  update public.profiles p
+  set trial_ends_at = case when p.status = 'trial'
+        then p.trial_ends_at + interval '7 days' else p.trial_ends_at end,
+      contract_renews_at = case when p.status = 'active'
+        then coalesce(p.contract_renews_at, now()) + interval '7 days' else p.contract_renews_at end
+  where (not v_is_free_domain and split_part(p.email, '@', 2) = v_referrer_domain)
+     or (v_is_free_domain and p.company_name is not null and p.company_name = v_referrer_company);
+
+  update public.profiles
+  set referral_reward_count = referral_reward_count + 1
+  where id = v_referrer_id;
 
   return true;
 end;
