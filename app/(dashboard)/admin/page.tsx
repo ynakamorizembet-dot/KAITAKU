@@ -5,6 +5,7 @@ import { IconClipboard } from "@/components/Icons";
 
 const managedFields = [
   { label: "顧客名 / 会社名" },
+  { label: "担当者名 / 電話番号" },
   { label: "プラン種別(トライアル/月額/年間)" },
   { label: "トライアル終了日" },
   { label: "契約更新日" },
@@ -56,7 +57,7 @@ export default async function AdminPage() {
   const adminClient = createAdminClient();
   const { data: profiles } = await adminClient
     .from("profiles")
-    .select("email, company_name, plan_type, trial_ends_at, contract_renews_at, status, created_at")
+    .select("email, company_name, contact_name, phone_number, plan_type, trial_ends_at, contract_renews_at, status, created_at")
     .order("created_at", { ascending: false });
 
   const customers = profiles ?? [];
@@ -151,6 +152,7 @@ export default async function AdminPage() {
             <thead>
               <tr className="text-left text-[11px] text-zinc-400 uppercase tracking-wide">
                 <th className="px-3 py-2 font-medium">顧客</th>
+                <th className="px-3 py-2 font-medium">連絡先</th>
                 <th className="px-3 py-2 font-medium">プラン</th>
                 <th className="px-3 py-2 font-medium">ステータス</th>
                 <th className="px-3 py-2 font-medium">トライアル終了</th>
@@ -163,6 +165,10 @@ export default async function AdminPage() {
                   <td className="px-3 py-3">
                     <p className="text-zinc-900 font-medium">{c.company_name || "—"}</p>
                     <p className="text-[11px] text-zinc-400">{c.email}</p>
+                  </td>
+                  <td className="px-3 py-3">
+                    <p className="text-zinc-700">{c.contact_name || "—"}</p>
+                    <p className="text-[11px] text-zinc-400">{c.phone_number || "—"}</p>
                   </td>
                   <td className="px-3 py-3 text-zinc-600">{PLAN_LABEL[c.plan_type] ?? c.plan_type}</td>
                   <td className="px-3 py-3 text-zinc-600">{STATUS_LABEL[c.status] ?? c.status}</td>

@@ -10,6 +10,8 @@ create table if not exists public.profiles (
   id uuid primary key references auth.users (id) on delete cascade,
   email text not null,
   company_name text,
+  contact_name text,
+  phone_number text,
   plan_type text not null default 'trial' check (plan_type in ('trial', 'monthly', 'annual')),
   trial_started_at timestamptz not null default now(),
   trial_ends_at timestamptz not null default (now() + interval '14 days'),
@@ -21,6 +23,8 @@ create table if not exists public.profiles (
 
 -- 既存DBにも安全に追従できるよう(このテーブルが既にある環境向け)
 alter table public.profiles add column if not exists is_admin boolean not null default false;
+alter table public.profiles add column if not exists contact_name text;
+alter table public.profiles add column if not exists phone_number text;
 
 alter table public.profiles enable row level security;
 
