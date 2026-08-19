@@ -21,6 +21,7 @@ create table if not exists public.profiles (
   referral_code text,
   referred_by uuid references public.profiles (id) on delete set null,
   referral_reward_count integer not null default 0,
+  is_company_parent boolean not null default false,
   created_at timestamptz not null default now()
 );
 
@@ -31,10 +32,29 @@ alter table public.profiles add column if not exists phone_number text;
 alter table public.profiles add column if not exists referral_code text;
 alter table public.profiles add column if not exists referred_by uuid references public.profiles (id) on delete set null;
 alter table public.profiles add column if not exists referral_reward_count integer not null default 0;
+alter table public.profiles add column if not exists is_company_parent boolean not null default false;
 
 -- 既存行(referral_codeが未設定)に暫定コードを発番してから一意インデックスを張る
 update public.profiles set referral_code = substr(replace(id::text, '-', ''), 1, 8) where referral_code is null;
 create unique index if not exists profiles_referral_code_idx on public.profiles (referral_code);
+
+-- 既存行の親アカウント補正: フリーメール以外のドメインごとに、最も古い1アカウントのみ親にする
+with ranked as (
+  select id,
+         row_number() over (
+           partition by split_part(email, '@', 2)
+           order by created_at asc
+         ) as rn
+  from public.profiles
+  where lower(split_part(email, '@', 2)) not in (
+    'gmail.com', 'yahoo.co.jp', 'yahoo.com', 'outlook.com', 'hotmail.com',
+    'icloud.com', 'me.com', 'live.com', 'qq.com', 'naver.com'
+  )
+)
+update public.profiles p
+set is_company_parent = true
+from ranked
+where p.id = ranked.id and ranked.rn = 1;
 
 alter table public.profiles enable row level security;
 
@@ -47,14 +67,36 @@ create policy "profiles_update_own" on public.profiles
   for update using (auth.uid() = id);
 
 -- 新規ユーザー登録時に自動でprofilesを1行作る(トライアル14日間・紹介コードを自動セット)
+-- is_company_parent: 「社長=親アカウント、社員=子アカウント」を判定するための自動割り当て。
+--   非フリーメールドメインで、かつそのドメイン配下にまだ1件もアカウントが無い場合のみtrue(=そのドメインの初回登録者が親)。
+--   フリーメールドメイン、または既に同ドメインの先行アカウントがある場合はfalse(=子)。
+--   誤って社員が先に登録して親になってしまうケースの手動是正手段は未実装(将来の管理UI課題)。
 create or replace function public.handle_new_user()
 returns trigger
 language plpgsql
 security definer set search_path = public
 as $$
+declare
+  v_domain text := split_part(new.email, '@', 2);
+  v_is_free_domain boolean;
+  v_is_first_in_domain boolean;
 begin
-  insert into public.profiles (id, email, referral_code)
-  values (new.id, new.email, substr(replace(new.id::text, '-', ''), 1, 8))
+  v_is_free_domain := lower(v_domain) in (
+    'gmail.com', 'yahoo.co.jp', 'yahoo.com', 'outlook.com', 'hotmail.com',
+    'icloud.com', 'me.com', 'live.com', 'qq.com', 'naver.com'
+  );
+
+  select not exists (
+    select 1 from public.profiles where split_part(email, '@', 2) = v_domain
+  ) into v_is_first_in_domain;
+
+  insert into public.profiles (id, email, referral_code, is_company_parent)
+  values (
+    new.id,
+    new.email,
+    substr(replace(new.id::text, '-', ''), 1, 8),
+    (not v_is_free_domain and v_is_first_in_domain)
+  )
   on conflict (id) do nothing;
   return new;
 end;
@@ -139,6 +181,59 @@ $$;
 grant execute on function public.apply_referral(text) to authenticated;
 
 -- =========================================
+-- 親アカウント/子アカウントの横断閲覧
+--   「社長が親アカウント、社員が子アカウント」を実現するための判定関数。
+--   is_admin(運営者がサービス全顧客を見る権限)とは完全に別物。
+--   is_parent_of(target): 呼び出し元が target と同一法人(同ドメイン)の親アカウントである場合のみtrueを返す。
+--   フリーメールドメインは対象外(会社名の自己申告一致では他人になりすませてしまうため、
+--   紹介ボーナスのような低リスク用途と違い、他人の非公開データを読める権限を渡すこの機能では採用しない)。
+-- =========================================
+create or replace function public.is_parent_of(p_target_user_id uuid)
+returns boolean
+language plpgsql
+security definer set search_path = public
+stable
+as $$
+declare
+  v_requester_id uuid := auth.uid();
+  v_requester_is_parent boolean;
+  v_requester_domain text;
+  v_target_domain text;
+  v_is_free_domain boolean;
+begin
+  if v_requester_id is null or v_requester_id = p_target_user_id then
+    return false;
+  end if;
+
+  select is_company_parent, split_part(email, '@', 2)
+    into v_requester_is_parent, v_requester_domain
+  from public.profiles
+  where id = v_requester_id;
+
+  if v_requester_is_parent is not true then
+    return false;
+  end if;
+
+  v_is_free_domain := lower(v_requester_domain) in (
+    'gmail.com', 'yahoo.co.jp', 'yahoo.com', 'outlook.com', 'hotmail.com',
+    'icloud.com', 'me.com', 'live.com', 'qq.com', 'naver.com'
+  );
+
+  if v_is_free_domain then
+    return false;
+  end if;
+
+  select split_part(email, '@', 2) into v_target_domain
+  from public.profiles
+  where id = p_target_user_id;
+
+  return v_target_domain = v_requester_domain;
+end;
+$$;
+
+grant execute on function public.is_parent_of(uuid) to authenticated;
+
+-- =========================================
 -- 2. companies: 企業リスト(法人向けチャネル)
 -- =========================================
 create table if not exists public.companies (
@@ -164,6 +259,11 @@ drop policy if exists "companies_all_own" on public.companies;
 create policy "companies_all_own" on public.companies
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
+-- 親アカウントは同一法人の子アカウントのデータを閲覧のみ可(書き込みは不可)
+drop policy if exists "companies_parent_read" on public.companies;
+create policy "companies_parent_read" on public.companies
+  for select using (public.is_parent_of(user_id));
+
 -- =========================================
 -- 3. email_sends: 送信メールの履歴・開封トラッキング
 -- =========================================
@@ -188,6 +288,10 @@ drop policy if exists "email_sends_all_own" on public.email_sends;
 create policy "email_sends_all_own" on public.email_sends
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
+drop policy if exists "email_sends_parent_read" on public.email_sends;
+create policy "email_sends_parent_read" on public.email_sends
+  for select using (public.is_parent_of(user_id));
+
 -- =========================================
 -- 4. sms_contacts: 個人向けSMS配信の連絡先
 --    consent_confirmed が false の連絡先には絶対に送信しない(全社ガードレール)
@@ -210,6 +314,10 @@ drop policy if exists "sms_contacts_all_own" on public.sms_contacts;
 create policy "sms_contacts_all_own" on public.sms_contacts
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
+drop policy if exists "sms_contacts_parent_read" on public.sms_contacts;
+create policy "sms_contacts_parent_read" on public.sms_contacts
+  for select using (public.is_parent_of(user_id));
+
 -- =========================================
 -- 5. sms_campaigns / sms_sends
 -- =========================================
@@ -227,6 +335,10 @@ drop policy if exists "sms_campaigns_all_own" on public.sms_campaigns;
 create policy "sms_campaigns_all_own" on public.sms_campaigns
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
+drop policy if exists "sms_campaigns_parent_read" on public.sms_campaigns;
+create policy "sms_campaigns_parent_read" on public.sms_campaigns
+  for select using (public.is_parent_of(user_id));
+
 create table if not exists public.sms_sends (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users (id) on delete cascade,
@@ -242,11 +354,17 @@ drop policy if exists "sms_sends_all_own" on public.sms_sends;
 create policy "sms_sends_all_own" on public.sms_sends
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
+drop policy if exists "sms_sends_parent_read" on public.sms_sends;
+create policy "sms_sends_parent_read" on public.sms_sends
+  for select using (public.is_parent_of(user_id));
+
 -- =========================================
 -- 6. api_keys: BYOK(ユーザー自身のGoogle Places / AI生成キー)
 --    【重要・未完了】encrypted_key は現状ただのtext列です。
 --    本番投入前に、pgsodium等でのアプリ側/DB側暗号化を必ず実装してください。
 --    平文のままではaiman-oneと同じ「キー漏えいリスク」の再発になります。
+--    【意図的に親アカウント閲覧の対象外】社員個々のBYOKキーは社長からも読めない設計。
+--    他のテーブルと違い parent_read ポリシーを追加していない。
 -- =========================================
 create table if not exists public.api_keys (
   id uuid primary key default gen_random_uuid(),
