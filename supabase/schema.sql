@@ -477,7 +477,11 @@ create policy "sms_sends_admin_read" on public.sms_sends
 --   各アカウントの個別無料枠(月10通)はこれまで通り維持。
 --   管理者は追加でチャージ(円)し、その分を¥20/通換算でメッセージ数に変換してプールに積む。
 --   プールから社員へ通数を配分する。配分を使い切ったら送信ブロック(管理者の再チャージ/再配分待ち)。
---   「チャージ式」= 都度追加するウォレット型。毎月自動リセットはしない(消費するまで繰越)。
+--   「チャージ式」= 管理者が都度チャージ / 毎月自動リセットあり。
+--     → 月初(毎月1日 09:00 JST = 00:00 UTC)に pg_cron で balance_messages・各社員の
+--       allocated_count/used_count を自動的に0へリセットする(reset_monthly_sms_budgets)。
+--       繰越はしない。毎月「いくらチャージするか」を管理者が都度決める運用。
+--       total_charged_yen は累計値としてリセットせず保持(過去のチャージ実績の参照用)。
 --   ※ 実際の送信フロー側での残数チェック・ブロック処理は未実装(別途アプリ側の対応が必要)。
 -- =========================================
 create table if not exists public.company_sms_budgets (
@@ -642,6 +646,41 @@ end;
 $$;
 
 grant execute on function public.allocate_sms_to_member(uuid, integer) to authenticated;
+
+-- 毎月の自動リセット本体(残高・全社員の配分/使用数を0に戻す。累計チャージ額は保持)
+create or replace function public.reset_monthly_sms_budgets()
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  update public.company_sms_budgets
+  set balance_messages = 0,
+      updated_at = now();
+
+  update public.sms_allocations
+  set allocated_count = 0,
+      used_count = 0,
+      updated_at = now();
+end;
+$$;
+
+-- pg_cron: 毎月1日 09:00 JST(00:00 UTC)に自動実行。冪等にするため既存ジョブを一旦解除してから再登録。
+create extension if not exists pg_cron with schema pg_catalog;
+
+do $$
+begin
+  perform cron.unschedule('reset-sms-budgets-monthly');
+exception when others then
+  null;
+end;
+$$;
+
+select cron.schedule(
+  'reset-sms-budgets-monthly',
+  '0 0 1 * *',
+  $$select public.reset_monthly_sms_budgets();$$
+);
 
 -- =========================================
 -- 6. api_keys: BYOK(ユーザー自身のGoogle Places / AI生成キー)
