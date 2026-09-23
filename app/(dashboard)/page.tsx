@@ -1,37 +1,62 @@
+import Link from "next/link";
 import CountUp from "@/components/CountUp";
 import FlowSteps from "@/components/FlowSteps";
+import { createClient } from "@/lib/supabase/server";
 
-const setupSteps = [
-  {
-    title: "企業を登録する",
-    description: "まずは手動で1社入力するだけで始められます。Googleマップからの自動収集(APIキーが必要)は、あとからいつでも追加設定できます。",
-    done: false,
-    actions: ["手動で追加(すぐ使える)", "Googleマップから自動収集"],
-  },
-  {
-    title: "AI生成サービスを接続",
-    description: "使っているAIサービスを選ぶだけで、キーの貼り付け先まで案内します。営業メール・SMS文面の自動生成に使用します。",
-    done: false,
-    actions: ["Geminiを接続", "GPTを接続", "Claudeを接続"],
-  },
-  {
-    title: "送信用メールアカウントを連携",
-    description: "Gmail または Outlook をOAuth連携すると、そのアカウントから送信できます。",
-    done: false,
-  },
-];
-
-const secondaryStats = [
-  { label: "登録企業数", value: 0 },
-  { label: "送信済み", value: 0 },
-  { label: "開封済み", value: 0 },
-  { label: "返信率", value: 0, suffix: "%" },
-];
+const AI_PROVIDERS = ["gemini", "openai", "anthropic"];
 
 const TRIAL_SEND_LIMIT = 50;
 const sentDuringTrial = 0;
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const [{ count: companyCount }, { data: apiKeys }] = await Promise.all([
+    supabase
+      .from("companies")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user?.id ?? ""),
+    supabase.from("api_keys").select("provider").eq("user_id", user?.id ?? ""),
+  ]);
+
+  const configuredProviders = new Set((apiKeys ?? []).map((k) => k.provider));
+  const hasAiKey = AI_PROVIDERS.some((p) => configuredProviders.has(p));
+
+  const setupSteps = [
+    {
+      title: "企業を登録する",
+      description:
+        "まずは手動で1社入力するだけで始められます。Googleマップからの自動収集(APIキーが必要)は、あとからいつでも追加設定できます。",
+      done: (companyCount ?? 0) > 0,
+      actions: [
+        { label: "手動で追加(すぐ使える)", href: "/companies", primary: true },
+        {
+          label: configuredProviders.has("google_places")
+            ? "Googleマップから自動収集(準備中)"
+            : "Googleマップから自動収集(要APIキー)",
+          href: "/settings",
+          primary: false,
+        },
+      ],
+    },
+    {
+      title: "AI生成サービスを接続",
+      description:
+        "使っているAIサービスのAPIキーを登録すると、営業メール・SMS文面の自動生成に使えるようになります。",
+      done: hasAiKey,
+      actions: [{ label: "APIキー連携ページへ", href: "/settings", primary: true }],
+    },
+    {
+      title: "送信用メールアカウントを連携",
+      description: "Gmail または Outlook をOAuth連携すると、そのアカウントから送信できます(準備中)。",
+      done: false,
+      actions: undefined,
+    },
+  ];
+
   const doneCount = setupSteps.filter((s) => s.done).length;
   const remaining = setupSteps.length - doneCount;
   const trialUsageRate = Math.round((sentDuringTrial / TRIAL_SEND_LIMIT) * 100);
@@ -39,6 +64,13 @@ export default function DashboardPage() {
     remaining === 0
       ? "今日も自動で営業を進めましょう"
       : `あと${remaining}ステップで使い始められます`;
+
+  const secondaryStats = [
+    { label: "登録企業数", value: companyCount ?? 0 },
+    { label: "送信済み", value: 0 },
+    { label: "開封済み", value: 0 },
+    { label: "返信率", value: 0, suffix: "%" },
+  ];
 
   return (
     <main className="min-h-screen px-6 sm:px-10 py-12 max-w-5xl mx-auto">
@@ -141,27 +173,31 @@ export default function DashboardPage() {
                     <p className="text-zinc-500 text-xs mt-1">{step.description}</p>
                   </div>
                 </div>
-                <span className="text-xs px-3 py-1 rounded-full border border-black/10 text-zinc-500 whitespace-nowrap">
-                  未設定
+                <span
+                  className={`text-xs px-3 py-1 rounded-full border whitespace-nowrap ${
+                    step.done
+                      ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                      : "border-black/10 text-zinc-500"
+                  }`}
+                >
+                  {step.done ? "設定済み" : "未設定"}
                 </span>
               </div>
 
               {step.actions && (
                 <div className="flex flex-wrap gap-2 mt-4 ml-11">
-                  {step.actions.map((a, idx) => (
-                    <button
-                      key={a}
-                      type="button"
-                      disabled
-                      className={`text-xs px-3.5 py-1.5 rounded-full cursor-not-allowed ${
-                        idx === 0
-                          ? "bg-violet-600/10 border border-violet-300 text-violet-700"
-                          : "bg-black/[0.04] border border-black/10 text-zinc-600"
+                  {step.actions.map((a) => (
+                    <Link
+                      key={a.label}
+                      href={a.href}
+                      className={`text-xs px-3.5 py-1.5 rounded-full transition-colors ${
+                        a.primary
+                          ? "bg-violet-600/10 border border-violet-300 text-violet-700 hover:bg-violet-600/20"
+                          : "bg-black/[0.04] border border-black/10 text-zinc-600 hover:bg-black/[0.07]"
                       }`}
-                      title="準備中"
                     >
-                      {a}
-                    </button>
+                      {a.label}
+                    </Link>
                   ))}
                 </div>
               )}

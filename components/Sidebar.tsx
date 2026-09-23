@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { IconHome, IconBuilding, IconMail, IconPhone, IconChat, IconClipboard } from "./Icons";
+import { IconHome, IconBuilding, IconMail, IconPhone, IconChat, IconClipboard, IconKey } from "./Icons";
 import { signOut } from "@/app/auth/actions";
 
 const navItems = [
@@ -11,6 +11,7 @@ const navItems = [
   { href: "/send", label: "メール送信", hint: "法人へ1件ずつ営業", icon: IconMail },
   { href: "/sms", label: "SMS配信", hint: "個人へ一斉配信", icon: IconPhone },
   { href: "/replies", label: "返信管理", hint: "返信の優先度を確認", icon: IconChat },
+  { href: "/settings", label: "APIキー連携", hint: "自動収集・AI生成の設定", icon: IconKey },
 ];
 
 const adminItems = [
