@@ -51,8 +51,12 @@
 3. `.env.example`を`.env.local`にコピーし、2でコピーした値を`NEXT_PUBLIC_SUPABASE_URL`・`NEXT_PUBLIC_SUPABASE_ANON_KEY`・`SUPABASE_SERVICE_ROLE_KEY`にそれぞれ貼り付け
 4. Supabaseダッシュボードの「SQL Editor」で`supabase/schema.sql`の中身を貼り付けて実行(テーブル・RLSポリシーが一括で作成されます)
 5. Supabaseダッシュボードの「Authentication → Providers」で、Emailプロバイダーが有効になっていることを確認(初期状態で有効なはずです)
-6. ターミナルで `npm install` → `npm run dev` → `http://localhost:3000` を開くと、自動的に`/login`へ案内されます。ご自身のメールアドレスを入力すると、そのアドレス宛にログインリンクが届きます(パスワード不要)
+6. ターミナルで `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` を実行し、出力された文字列を`.env.local`の`ENCRYPTION_KEY`に貼り付け(ユーザーのAPIキーを暗号化保存するための鍵。一度決めたら変更しないこと)
+7. ターミナルで `npm install` → `npm run dev` → `http://localhost:3000` を開くと、自動的に`/login`へ案内されます。ご自身のメールアドレスを入力すると、そのアドレス宛にログインリンクが届きます(パスワード不要)
+8. ログイン後、サイドバーから「設定」→ 「APIキー連携」で、ご自身のGemini/OpenAI/Anthropicいずれかのキーを登録すると、「メール送信」画面で実際のAI下書き生成が使えるようになります(Gemini APIキーは https://aistudio.google.com/apikey で無料取得可能)
 
 ## ステータス
 
 2026-08-15:要件確定・フォルダ作成 → Next.js初期scaffold作成 → aiman-one前身コードの実物解析(重大なセキュリティ課題を発見) → 「1→100」部署横断会議でデザイン・収益モデル刷新方針を決定 → ダッシュボード・企業リスト・メール送信・返信管理の全4画面をグラスモーフィズム+左サイドバー構成で刷新 → ライトテーマ・全体フロー表示・AI+手動編集UI等を追加改修 → 表示崩れバグ修正 → プロダクト position を「複数チャネル対応の汎用営業・マーケティングSaaS」に再定義し、SMS配信・契約管理(admin)画面を新設 → 競合調査を踏まえ価格を年間¥60,000(月換算¥5,000)・月払い¥6,000/月に確定 → オンボーディング改善(Google APIキー取得を必須にせず企業の手動登録を標準ルートに)・開封トラッキング追加 → プロダクト名を「カイタク(KAITAKU)」に確定 → **2026-08-16:Supabase認証(マジックリンク)・DBスキーマ・企業リストの実データ連携(手動追加フォーム)を実装。`app/`を`(dashboard)`ルートグループへ再編し、未ログイン時は`/login`へ自動リダイレクトされる構成にした。** 次はボスがSupabaseプロジェクトを作成しスキーマを流し込む(上記セットアップ手順) → 動作確認 → AIメール生成・SMS配信・OAuth送信の実装 → `npx vercel`でのデプロイに着手。
+
+**2026-09-23:** 「メール送信」画面のAI下書き生成を、サンプル固定文からBYOKでの実際のAI API呼び出しに置き換えた。`lib/ai/generateDraft.ts`でGemini/OpenAI/Anthropicのいずれかを素のfetchで呼び出し(追加npmパッケージなし)、企業リストの実データ(会社名・業種・所在地・メモ)をもとに件名・本文を生成する。設定画面で登録済みのAPIキー(`lib/crypto.ts`で暗号化保存済み)を`gemini→openai→anthropic`の優先順で自動選択。生成結果はその場で自由に編集可能(送信機能自体はまだ準備中)。各社のモデルID(`lib/ai/generateDraft.ts`内`MODEL_IDS`)は時間経過で古くなる可能性があるため、生成が404等で失敗する場合はまずここを確認すること。ボス作業として`ENCRYPTION_KEY`の`.env.local`設定が必要(上記セットアップ手順6)。

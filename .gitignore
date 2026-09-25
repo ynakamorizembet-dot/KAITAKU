@@ -3,3 +3,6 @@ node_modules/
 .env
 .env.local
 *.log
+_to_delete/
+_stale_git_locks/
+*.tsbuildinfo

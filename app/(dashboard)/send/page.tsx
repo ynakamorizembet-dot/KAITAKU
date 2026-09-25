@@ -1,21 +1,32 @@
+import Link from "next/link";
 import EmptyState from "@/components/EmptyState";
-import { IconMail, IconSparkle } from "@/components/Icons";
+import { IconMail } from "@/components/Icons";
+import { createClient } from "@/lib/supabase/server";
+import SendComposer from "./SendComposer";
 
 const TRIAL_SEND_LIMIT = 50;
 const sentDuringTrial = 0;
 
-const sampleDraft = `〇〇株式会社
-ご担当者様
+export default async function SendPage() {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-はじめまして、△△と申します。
-貴社のホームページを拝見し、〜〜という点に大変魅力を感じてご連絡いたしました。
+  const [{ data: companies }, { data: keys }] = await Promise.all([
+    supabase
+      .from("companies")
+      .select("id, name, industry, address")
+      .eq("user_id", user?.id ?? "")
+      .order("created_at", { ascending: false }),
+    supabase.from("api_keys").select("provider").eq("user_id", user?.id ?? ""),
+  ]);
 
-(AIが企業の情報をもとに、ここに文面を自動生成します)
+  const list = companies ?? [];
+  const hasAnyApiKey = (keys ?? []).some((k: { provider: string }) =>
+    ["gemini", "openai", "anthropic"].includes(k.provider)
+  );
 
-ご興味があれば、一度お話しできればと思います。
-どうぞよろしくお願いいたします。`;
-
-export default function SendPage() {
   return (
     <main className="min-h-screen px-6 sm:px-10 py-12 max-w-5xl mx-auto">
       <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-8 animate-fade-in-up">
@@ -51,32 +62,18 @@ export default function SendPage() {
         </div>
       </section>
 
-      {/* 文面作成の流れ + サンプル下書き(AI生成 → 手動編集 → 送信) */}
-      <section className="glass-card rounded-3xl p-6 sm:p-8 mb-6 animate-fade-in-up" style={{ animationDelay: "130ms" }}>
-        <div className="flex items-center justify-between mb-4">
-          <p className="text-sm font-semibold text-zinc-700 flex items-center gap-2">
-            <IconSparkle className="w-4 h-4 text-violet-500" />
-            文面プレビュー(サンプル)
-          </p>
-          <div className="flex gap-2">
-            <span className="text-xs px-3 py-1.5 rounded-full bg-black/[0.04] border border-black/10 text-zinc-500">
-              AIで生成
-            </span>
-            <span className="text-xs px-3 py-1.5 rounded-full bg-black/[0.04] border border-black/10 text-zinc-500">
-              自分で書く
-            </span>
-          </div>
-        </div>
-        <textarea
-          readOnly
-          value={sampleDraft}
-          rows={9}
-          className="w-full text-sm text-zinc-600 bg-white/70 border border-black/[0.06] rounded-2xl p-4 leading-relaxed resize-none focus:outline-none"
-        />
-        <p className="text-[11px] text-zinc-400 mt-2">
-          ※実データ接続後は、この欄をそのまま編集して送信できます(全文を自分で書き直すことも可能です)。
-        </p>
-      </section>
+      {list.length === 0 ? (
+        <section className="animate-fade-in-up" style={{ animationDelay: "130ms" }}>
+          <EmptyState
+            icon={<IconMail className="w-7 h-7" />}
+            title="送信対象の企業がまだありません"
+            description="先に「企業リスト」で企業を登録してください(手動追加ですぐに始められます)。企業が登録されると、ここでAI下書きの生成・編集・送信ができるようになります。"
+            actionLabel="企業リストへ移動(準備中)"
+          />
+        </section>
+      ) : (
+        <SendComposer companies={list} hasAnyApiKey={hasAnyApiKey} />
+      )}
 
       {/* トライアル送信枠 */}
       <section className="glass-card rounded-2xl p-4 mb-10 animate-fade-in-up" style={{ animationDelay: "160ms" }}>
@@ -92,17 +89,14 @@ export default function SendPage() {
         </div>
       </section>
 
-      <section className="animate-fade-in-up" style={{ animationDelay: "200ms" }}>
-        <EmptyState
-          icon={<IconMail className="w-7 h-7" />}
-          title="送信対象の企業がまだありません"
-          description="先に「企業リスト」で企業を登録してください(手動追加ですぐに始められます)。企業が登録されると、ここでAI下書きの生成・編集・送信ができるようになります。"
-          actionLabel="企業リストへ移動(準備中)"
-        />
-      </section>
-
       <footer className="mt-8 text-xs text-zinc-400 leading-relaxed space-y-1">
-        <p>メールアカウントは運営側で保有せず、ユーザーご自身のアカウントをOAuth連携して送信します。</p>
+        <p>
+          AI下書き生成は、設定画面で登録したご自身のAPIキー(Gemini/OpenAI/Anthropic)を使って実際にAIを呼び出します。
+          <Link href="/settings" className="underline mx-1">
+            設定画面へ
+          </Link>
+        </p>
+        <p>メールアカウントは運営側で保有せず、ユーザーご自身のアカウントをOAuth連携して送信します(実送信機能は準備中)。</p>
         <p>開封トラッキングは、メールに埋め込む開封確認用の目印で判定します。仕組み上、メールソフトの画像読み込み設定によっては実際に開封されても「未開封」と表示される場合があります(100%正確な計測ではありません)。</p>
       </footer>
     </main>
