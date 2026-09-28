@@ -49,13 +49,18 @@ function parseDraft(raw: string): DraftResult {
   };
 }
 
-async function callGemini(apiKey: string, prompt: string): Promise<string> {
+// maxOutputTokens/maxTokensを指定すると短い応答で済ませられる(APIキーの接続確認用)。
+// 省略時は通常の文面生成として動作する。
+async function callGemini(apiKey: string, prompt: string, maxOutputTokens?: number): Promise<string> {
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_IDS.gemini}:generateContent?key=${encodeURIComponent(apiKey)}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        ...(maxOutputTokens ? { generationConfig: { maxOutputTokens } } : {}),
+      }),
     }
   );
   if (!res.ok) {
@@ -68,7 +73,7 @@ async function callGemini(apiKey: string, prompt: string): Promise<string> {
   return text;
 }
 
-async function callOpenAI(apiKey: string, prompt: string): Promise<string> {
+async function callOpenAI(apiKey: string, prompt: string, maxTokens?: number): Promise<string> {
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -78,6 +83,7 @@ async function callOpenAI(apiKey: string, prompt: string): Promise<string> {
     body: JSON.stringify({
       model: MODEL_IDS.openai,
       messages: [{ role: "user", content: prompt }],
+      ...(maxTokens ? { max_tokens: maxTokens } : {}),
     }),
   });
   if (!res.ok) {
@@ -90,7 +96,7 @@ async function callOpenAI(apiKey: string, prompt: string): Promise<string> {
   return text;
 }
 
-async function callAnthropic(apiKey: string, prompt: string): Promise<string> {
+async function callAnthropic(apiKey: string, prompt: string, maxTokens = 600): Promise<string> {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -100,7 +106,7 @@ async function callAnthropic(apiKey: string, prompt: string): Promise<string> {
     },
     body: JSON.stringify({
       model: MODEL_IDS.anthropic,
-      max_tokens: 600,
+      max_tokens: maxTokens,
       messages: [{ role: "user", content: prompt }],
     }),
   });
@@ -125,4 +131,20 @@ export async function generateEmailDraft(
   else if (provider === "openai") raw = await callOpenAI(apiKey, prompt);
   else raw = await callAnthropic(apiKey, prompt);
   return parseDraft(raw);
+}
+
+// 設定画面でAPIキー保存時に、実際にそのキーが有効か軽量なリクエストで確認する。
+// 生成本番と同じ関数・同じエンドポイントを使うことで「保存時は成功したのに本番の文面生成で
+// 初めて失敗に気づく」という事態を防ぐ。トークン数を絞っているのでコストはごく僅か。
+export type PingResult = { ok: true } | { ok: false; message: string };
+
+export async function pingProvider(provider: AiProvider, apiKey: string): Promise<PingResult> {
+  try {
+    if (provider === "gemini") await callGemini(apiKey, "接続確認", 5);
+    else if (provider === "openai") await callOpenAI(apiKey, "接続確認", 5);
+    else await callAnthropic(apiKey, "接続確認", 5);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : "接続確認に失敗しました。" };
+  }
 }

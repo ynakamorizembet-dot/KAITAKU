@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { encryptSecret } from "@/lib/crypto";
+import { pingProvider, type AiProvider } from "@/lib/ai/generateDraft";
 import { revalidatePath } from "next/cache";
 
 export type SaveApiKeyState = {
@@ -11,6 +12,11 @@ export type SaveApiKeyState = {
 
 const VALID_PROVIDERS = ["google_places", "gemini", "openai", "anthropic"] as const;
 type Provider = (typeof VALID_PROVIDERS)[number];
+
+const AI_PROVIDERS: readonly AiProvider[] = ["gemini", "openai", "anthropic"];
+function isAiProvider(p: string): p is AiProvider {
+  return (AI_PROVIDERS as readonly string[]).includes(p);
+}
 
 // APIキーを暗号化してDBへ保存(新規 or 上書き)。
 // 平文は暗号化直前まで一瞬だけメモリ上に存在し、DBには絶対に平文で書き込まれない。
@@ -37,6 +43,19 @@ export async function saveApiKey(
     return { status: "error", message: "ログインが必要です。" };
   }
 
+  // AI生成用のキー(Gemini/OpenAI/Anthropic)は、保存前に実際に接続できるか確認する。
+  // ここで弾いておけば「保存はできたのに送信画面で初めて失敗に気づく」を防げる。
+  // Google Places(企業自動収集用)は課金される可能性のあるリクエストになるため、確認は行わずそのまま保存する。
+  if (isAiProvider(provider)) {
+    const ping = await pingProvider(provider, rawKey);
+    if (!ping.ok) {
+      return {
+        status: "error",
+        message: `キーの確認に失敗しました。コピーミスや権限設定をご確認ください。(詳細: ${ping.message})`,
+      };
+    }
+  }
+
   let encrypted: string;
   try {
     encrypted = encryptSecret(rawKey);
@@ -60,7 +79,10 @@ export async function saveApiKey(
 
   revalidatePath("/settings");
   revalidatePath("/");
-  return { status: "success", message: "保存しました。" };
+  return {
+    status: "success",
+    message: isAiProvider(provider) ? "接続確認OK。保存しました。" : "保存しました。",
+  };
 }
 
 export async function deleteApiKey(formData: FormData) {
