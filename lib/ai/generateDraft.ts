@@ -7,10 +7,15 @@
 
 export type AiProvider = "gemini" | "openai" | "anthropic";
 
+// 2026-09-30時点で確認済み(各社の廃止スケジュールを要ウォッチ):
+// - gemini-2.5-flash は2026-10-16に退役するため、後継の gemini-3.8-flash に切り替え済み
+// - claude-3-5-haiku-20241022 は2026-02-19付で既に退役済みだったため、
+//   後継の claude-haiku-4-5-20251001 に切り替え済み(Anthropicキー利用者は本更新まで生成が全滅していた)
+// - gpt-4o-mini は現時点で廃止予定リストに入っておらず変更なし
 const MODEL_IDS: Record<AiProvider, string> = {
-  gemini: "gemini-2.5-flash",
+  gemini: "gemini-3.8-flash",
   openai: "gpt-4o-mini",
-  anthropic: "claude-3-5-haiku-20241022",
+  anthropic: "claude-haiku-4-5-20251001",
 };
 
 export type DraftResult = { subject: string; body: string };
