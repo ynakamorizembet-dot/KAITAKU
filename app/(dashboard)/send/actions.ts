@@ -82,3 +82,72 @@ export async function generateDraftForCompany(companyId: string): Promise<Genera
     return { status: "error", message: msg };
   }
 }
+
+export type ApplyTemplateState = {
+  status: "idle" | "success" | "error";
+  subject?: string;
+  body?: string;
+  message?: string;
+};
+
+function fillPlaceholders(
+  text: string,
+  company: { name: string; industry: string | null; address: string | null; notes: string | null }
+): string {
+  return text
+    .replaceAll("{{会社名}}", company.name || "")
+    .replaceAll("{{業種}}", company.industry || "")
+    .replaceAll("{{所在地}}", company.address || "")
+    .replaceAll("{{メモ}}", company.notes || "");
+}
+
+// 保存済みテンプレートに、選択した企業の情報を{{会社名}}等のプレースホルダーとして差し込む。
+// AI呼び出しは発生しないため無料・瞬時。テンプレートの型自体はAIで下書きして/templatesに
+// 登録しておく運用も想定している。
+export async function applyTemplateToCompany(
+  templateId: string,
+  companyId: string
+): Promise<ApplyTemplateState> {
+  if (!templateId) {
+    return { status: "error", message: "テンプレートを選択してください。" };
+  }
+  if (!companyId) {
+    return { status: "error", message: "企業を選択してください。" };
+  }
+
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return { status: "error", message: "ログインが必要です。" };
+  }
+
+  const [{ data: template, error: templateError }, { data: company, error: companyError }] = await Promise.all([
+    supabase
+      .from("email_templates")
+      .select("subject, body")
+      .eq("id", templateId)
+      .eq("user_id", user.id)
+      .single(),
+    supabase
+      .from("companies")
+      .select("name, industry, address, notes")
+      .eq("id", companyId)
+      .eq("user_id", user.id)
+      .single(),
+  ]);
+
+  if (templateError || !template) {
+    return { status: "error", message: "テンプレートが見つかりませんでした。" };
+  }
+  if (companyError || !company) {
+    return { status: "error", message: "企業情報が見つかりませんでした。" };
+  }
+
+  return {
+    status: "success",
+    subject: fillPlaceholders(template.subject ?? "", company),
+    body: fillPlaceholders(template.body ?? "", company),
+  };
+}

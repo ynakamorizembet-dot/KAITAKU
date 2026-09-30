@@ -684,9 +684,8 @@ select cron.schedule(
 
 -- =========================================
 -- 6. api_keys: BYOK(ユーザー自身のGoogle Places / AI生成キー)
---    【重要・未完了】encrypted_key は現状ただのtext列です。
---    本番投入前に、pgsodium等でのアプリ側/DB側暗号化を必ず実装してください。
---    平文のままではaiman-oneと同じ「キー漏えいリスク」の再発になります。
+--    【2026-09対応済み】encrypted_key はアプリ側(lib/crypto.ts)でAES-256-GCM暗号化してから
+--    保存している。鍵はDBに置かず環境変数 ENCRYPTION_KEY のみが握る(pgsodiumは不採用)。
 --    【意図的に親アカウント閲覧の対象外】社員個々のBYOKキーは社長からも読めない設計。
 --    他のテーブルと違い parent_read ポリシーを追加していない。
 -- =========================================
@@ -704,3 +703,34 @@ alter table public.api_keys enable row level security;
 drop policy if exists "api_keys_all_own" on public.api_keys;
 create policy "api_keys_all_own" on public.api_keys
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- =========================================
+-- 7. email_templates: 用途別に使い回すメール文面テンプレート
+--    企業ごとに毎回AI生成/手書きするのではなく、業種・用途別にあらかじめ用意しておき、
+--    送信画面で企業を選ぶと {{会社名}} などのプレースホルダーが自動で差し込まれる。
+--    AI生成はテンプレートの「叩き台を作る」用途として引き続き併用する想定(置き換えではない)。
+-- =========================================
+create table if not exists public.email_templates (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users (id) on delete cascade,
+  name text not null,
+  category text,
+  subject text not null default '',
+  body text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists email_templates_user_id_idx on public.email_templates (user_id);
+
+alter table public.email_templates enable row level security;
+
+drop policy if exists "email_templates_all_own" on public.email_templates;
+create policy "email_templates_all_own" on public.email_templates
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- 管理者は同一法人内の他アカウントのテンプレートを閲覧のみ可(companiesと同じ方針。書き込み不可)
+drop policy if exists "email_templates_admin_read" on public.email_templates;
+create policy "email_templates_admin_read" on public.email_templates
+  for select using (public.is_company_admin_of(user_id));
+

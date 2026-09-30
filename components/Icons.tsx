@@ -109,6 +109,15 @@ export function IconKey({ className = "w-5 h-5" }: IconProps) {
   );
 }
 
+export function IconTemplate({ className = "w-5 h-5" }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className}>
+      <rect x="4" y="4" width="16" height="16" rx="2" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M4 9.5h16M9.5 9.5V20" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function IconClipboard({ className = "w-5 h-5" }: IconProps) {
   return (
     <svg viewBox="0 0 24 24" fill="none" className={className}>

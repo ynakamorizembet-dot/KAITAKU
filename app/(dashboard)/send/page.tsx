@@ -13,16 +13,22 @@ export default async function SendPage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const [{ data: companies }, { data: keys }] = await Promise.all([
+  const [{ data: companies }, { data: keys }, { data: templates }] = await Promise.all([
     supabase
       .from("companies")
       .select("id, name, industry, address")
       .eq("user_id", user?.id ?? "")
       .order("created_at", { ascending: false }),
     supabase.from("api_keys").select("provider").eq("user_id", user?.id ?? ""),
+    supabase
+      .from("email_templates")
+      .select("id, name, category")
+      .eq("user_id", user?.id ?? "")
+      .order("created_at", { ascending: false }),
   ]);
 
   const list = companies ?? [];
+  const templateList = templates ?? [];
   const hasAnyApiKey = (keys ?? []).some((k: { provider: string }) =>
     ["gemini", "openai", "anthropic"].includes(k.provider)
   );
@@ -41,7 +47,6 @@ export default async function SendPage() {
         </span>
       </header>
 
-      {/* AIからの提案 */}
       <section
         className="glass-card-hero rounded-3xl p-8 mb-6 animate-fade-in-up"
         style={{ animationDelay: "80ms" }}
@@ -50,13 +55,18 @@ export default async function SendPage() {
           <div className="w-2.5 h-2.5 rounded-full bg-violet-500 mt-2 pulse-glow flex-shrink-0" />
           <div className="flex-1">
             <p className="text-xs font-semibold tracking-wide text-violet-600 uppercase mb-2">
-              AIからの提案
+              使い方
             </p>
             <h2 className="text-xl font-semibold leading-snug text-zinc-900">
-              企業を選ぶと、AIが企業の特徴に合わせた営業メールを自動で下書きします
+              業種・用途ごとにテンプレートを用意しておくと、企業を選ぶだけで文面が完成します
             </h2>
             <p className="text-sm text-zinc-500 mt-2 leading-relaxed">
-              下書きはAI任せにせず、その場で自由に書き換えられます。送信は連携したご自身のメールアカウント(Gmail / Outlook)から行われ、誤送信防止のため必ず内容確認の画面を挟みます。
+              {"{{会社名}}"}などのプレースホルダーが自動で差し込まれ、APIキーもAI呼び出しも不要です。
+              まだテンプレートが無い業種・初めての1通は「AIで生成」で叩き台を作り、そのまま
+              <Link href="/templates" className="underline mx-1">
+                テンプレートに保存
+              </Link>
+              しておけば次回から使い回せます。すべてその場で自由に書き換え可能です。
             </p>
           </div>
         </div>
@@ -67,12 +77,12 @@ export default async function SendPage() {
           <EmptyState
             icon={<IconMail className="w-7 h-7" />}
             title="送信対象の企業がまだありません"
-            description="先に「企業リスト」で企業を登録してください(手動追加ですぐに始められます)。企業が登録されると、ここでAI下書きの生成・編集・送信ができるようになります。"
+            description="先に「企業リスト」で企業を登録してください(手動追加ですぐに始められます)。企業が登録されると、ここでテンプレート差し込み・AI下書きの生成・編集・送信ができるようになります。"
             actionLabel="企業リストへ移動(準備中)"
           />
         </section>
       ) : (
-        <SendComposer companies={list} hasAnyApiKey={hasAnyApiKey} />
+        <SendComposer companies={list} templates={templateList} hasAnyApiKey={hasAnyApiKey} />
       )}
 
       {/* トライアル送信枠 */}
@@ -91,7 +101,11 @@ export default async function SendPage() {
 
       <footer className="mt-8 text-xs text-zinc-400 leading-relaxed space-y-1">
         <p>
-          AI下書き生成は、設定画面で登録したご自身のAPIキー(Gemini/OpenAI/Anthropic)を使って実際にAIを呼び出します。
+          テンプレートは
+          <Link href="/templates" className="underline mx-1">
+            テンプレート管理画面
+          </Link>
+          で何個でも登録できます。AI下書き生成は、設定画面で登録したご自身のAPIキー(Gemini/OpenAI/Anthropic)を使って実際にAIを呼び出します。
           <Link href="/settings" className="underline mx-1">
             設定画面へ
           </Link>
